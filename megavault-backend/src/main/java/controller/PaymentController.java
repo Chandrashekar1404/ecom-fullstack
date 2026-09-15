@@ -1,86 +1,219 @@
 package controller;
 
+import com.razorpay.Order;
+import com.razorpay.RazorpayClient;
+import com.razorpay.Utils;
+import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/payment/razorpay")
 @CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class PaymentController {
 
-    // Razorpay Key ID & Secret (Test Mode Credentials)
-    private static final String RAZORPAY_KEY_ID = "rzp_test_MegaVault2026Key";
-    private static final String RAZORPAY_KEY_SECRET = "RazorpaySecret2026";
+    @Value("${razorpay.key.id}")
+    private String razorpayKeyId;
+
+    @Value("${razorpay.key.secret}")
+    private String razorpayKeySecret;
 
     /**
-     * 1. Create Razorpay Order
-     * Endpoint: POST /api/payment/razorpay/create-order
+     * Create a real Razorpay Order.
+     *
+     * Endpoint:
+     * POST /api/payment/razorpay/create-order
      */
     @PostMapping("/create-order")
-    public ResponseEntity<Map<String, Object>> createRazorpayOrder(@RequestBody Map<String, Object> data) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        try {
-            Double amount = Double.parseDouble(data.getOrDefault("amount", "100").toString());
-            String currency = data.getOrDefault("currency", "INR").toString();
-            String receipt = data.getOrDefault("receipt", "rcpt_" + System.currentTimeMillis()).toString();
+    public ResponseEntity<Map<String, Object>> createRazorpayOrder(
+            @RequestBody Map<String, Object> data) {
 
-            // Convert amount to paise (1 INR = 100 Paise)
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        try {
+            double amount = Double.parseDouble(
+                    data.getOrDefault("amount", "100").toString()
+            );
+
+            String currency = data
+                    .getOrDefault("currency", "INR")
+                    .toString();
+
+            String receipt = data
+                    .getOrDefault(
+                            "receipt",
+                            "rcpt_" + System.currentTimeMillis()
+                    )
+                    .toString();
+
             long amountInPaise = Math.round(amount * 100);
 
-            // Generate Razorpay Order ID format: order_XXXXXX
-            String orderId = "order_" + UUID.randomUUID().toString().replace("-", "").substring(0, 14);
+            RazorpayClient razorpayClient =
+                    new RazorpayClient(
+                            razorpayKeyId,
+                            razorpayKeySecret
+                    );
+
+            JSONObject orderRequest = new JSONObject();
+
+            orderRequest.put("amount", amountInPaise);
+            orderRequest.put("currency", currency);
+            orderRequest.put("receipt", receipt);
+
+            Order razorpayOrder =
+                    razorpayClient.orders.create(orderRequest);
+
+            String orderId = razorpayOrder.get("id");
 
             response.put("status", "CREATED");
             response.put("orderId", orderId);
             response.put("amount", amountInPaise);
             response.put("currency", currency);
             response.put("receipt", receipt);
-            response.put("keyId", RAZORPAY_KEY_ID);
-            response.put("message", "Razorpay Order created successfully!");
+            response.put("keyId", razorpayKeyId);
+            response.put(
+                    "message",
+                    "Razorpay Order created successfully!"
+            );
 
-            System.out.println("💳 [RAZORPAY GATEWAY] Created Order ID: " + orderId + " | Amount: ₹" + amount + " (" + amountInPaise + " Paise)");
+            System.out.println(
+                    "💳 [RAZORPAY] Real Order Created: "
+                            + orderId
+                            + " | Amount: ₹"
+                            + amount
+            );
 
             return ResponseEntity.ok(response);
+
         } catch (Exception e) {
+
+            e.printStackTrace();
+
             response.put("status", "ERROR");
-            response.put("message", "Failed to create Razorpay Order: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            response.put(
+                    "message",
+                    "Failed to create Razorpay Order: "
+                            + e.getMessage()
+            );
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body(response);
         }
     }
 
     /**
-     * 2. Verify Razorpay Payment Signature
-     * Endpoint: POST /api/payment/razorpay/verify-signature
+     * Verify Razorpay Payment Signature.
+     *
+     * Endpoint:
+     * POST /api/payment/razorpay/verify-signature
      */
     @PostMapping("/verify-signature")
-    public ResponseEntity<Map<String, Object>> verifyPaymentSignature(@RequestBody Map<String, Object> data) {
+    public ResponseEntity<Map<String, Object>> verifyPaymentSignature(
+            @RequestBody Map<String, Object> data) {
+
         Map<String, Object> response = new LinkedHashMap<>();
 
-        String razorpayOrderId = (String) data.get("razorpayOrderId");
-        String razorpayPaymentId = (String) data.get("razorpayPaymentId");
-        String razorpaySignature = (String) data.get("razorpaySignature");
-        String upiId = (String) data.getOrDefault("upiId", "customer@upi");
+        try {
 
-        // Verify that payment details exist
-        if (razorpayOrderId != null && (razorpayPaymentId != null || razorpaySignature != null)) {
+            String razorpayOrderId =
+                    (String) data.get("razorpayOrderId");
+
+            String razorpayPaymentId =
+                    (String) data.get("razorpayPaymentId");
+
+            String razorpaySignature =
+                    (String) data.get("razorpaySignature");
+
+            if (razorpayOrderId == null
+                    || razorpayPaymentId == null
+                    || razorpaySignature == null) {
+
+                response.put("status", "FAILED");
+                response.put(
+                        "message",
+                        "Missing Razorpay payment verification data."
+                );
+
+                return ResponseEntity
+                        .badRequest()
+                        .body(response);
+            }
+
+            JSONObject attributes = new JSONObject();
+
+            attributes.put(
+                    "razorpay_order_id",
+                    razorpayOrderId
+            );
+
+            attributes.put(
+                    "razorpay_payment_id",
+                    razorpayPaymentId
+            );
+
+            attributes.put(
+                    "razorpay_signature",
+                    razorpaySignature
+            );
+
+            boolean isValid = Utils.verifyPaymentSignature(
+                    attributes,
+                    razorpayKeySecret
+            );
+
+            if (!isValid) {
+
+                response.put("status", "FAILED");
+                response.put(
+                        "message",
+                        "Invalid Razorpay payment signature."
+                );
+
+                return ResponseEntity
+                        .badRequest()
+                        .body(response);
+            }
+
             response.put("status", "SUCCESS");
-            response.put("message", "Razorpay UPI Payment verified successfully!");
-            response.put("razorpayOrderId", razorpayOrderId);
-            response.put("razorpayPaymentId", razorpayPaymentId != null ? razorpayPaymentId : "pay_" + UUID.randomUUID().toString().replace("-", "").substring(0, 14));
-            response.put("paymentMethod", "UPI");
-            response.put("vpa", upiId);
+            response.put(
+                    "message",
+                    "Razorpay payment verified successfully."
+            );
+            response.put(
+                    "razorpayOrderId",
+                    razorpayOrderId
+            );
+            response.put(
+                    "razorpayPaymentId",
+                    razorpayPaymentId
+            );
 
-            System.out.println("✅ [RAZORPAY UPI VERIFIED] Payment ID: " + response.get("razorpayPaymentId") + " | VPA: " + upiId);
+            System.out.println(
+                    "✅ [RAZORPAY] Payment signature verified: "
+                            + razorpayPaymentId
+            );
 
             return ResponseEntity.ok(response);
-        } else {
-            response.put("status", "FAILED");
-            response.put("message", "Invalid Razorpay payment signature verification!");
-            return ResponseEntity.badRequest().body(response);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            response.put("status", "ERROR");
+            response.put(
+                    "message",
+                    "Payment verification failed: "
+                            + e.getMessage()
+            );
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body(response);
         }
     }
 }

@@ -381,6 +381,7 @@ export const CheckoutPage = () => {
         isOpen={isRazorpayModalOpen}
         onClose={() => setIsRazorpayModalOpen(false)}
         amount={grandTotal}
+        orderDetails={formData}
         onSuccess={handleRazorpayPaymentSuccess}
       />
     </div>

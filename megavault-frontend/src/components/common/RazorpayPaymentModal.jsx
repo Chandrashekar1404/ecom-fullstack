@@ -112,7 +112,7 @@ export const RazorpayPaymentModal = ({ isOpen, onClose, amount, orderDetails, on
       }
 
       const options = {
-        key: razorpayOrder?.keyId || 'rzp_test_TOkKWxHA53UxlC',
+        key: razorpayOrder?.keyId,
         amount: razorpayOrder?.amount || (amount || 23597) * 100,
         currency: razorpayOrder?.currency || 'INR',
         name: 'MegaVault Store',

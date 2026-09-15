@@ -9,3 +9,13 @@ venv/
 .venv/
 dist/
 build/
+
+# Java / Maven
+target/
+*.class
+
+# IDE
+.vscode/
+.classpath
+.project
+.settings/
